@@ -1,3 +1,5 @@
+// Display functions
+
 public void Write(IMyTextPanel panel, string text) {
 	if (text == null)
 	{
@@ -26,6 +28,20 @@ public void Clear(IMyTextPanel panel) {
 	panel.ShowPublicTextOnScreen();
 }
 
+//
+
+public void GetInventories() {
+	var blocks = new List<IMyTerminalBlock>();
+	GridTerminalSystem.GetBlocks(blocks);
+	foreach (var block in blocks)
+	{
+		if (block.HasInventory)
+		{
+			blkInts.Add(new BlockInterface(block));
+		}
+	}
+}
+
 public bool CheckForLabel(string name, string id) {
 	return String.Equals(name.Substring(name.Length - id.Length, id.Length), id, StringComparison.OrdinalIgnoreCase);
 }
@@ -39,8 +55,24 @@ public void TransferAll(IMyInventory source, IMyInventory dst) {
 	for (int i = 0; i < items.Count; i++)
 	{
 		source.TransferItemTo(dst, i);
-		WriteLine(debugScreen, "Transferred: " + items[i].Amount + ' ' + items[i].Content.SubtypeName);
+		WriteLine(screens["Debug"], "Transferred: " + items[i].Amount + ' ' + items[i].Content.SubtypeName);
 	}
+}
+
+public string GenerateID(IMyInventoryItem item)
+{
+	return item.Content.ToString().Substring(item.Content.ToString().IndexOf("_") + 1) + item.Content.SubtypeName;
+}
+
+public void addItem(IMyInventoryItem item) {
+	string id = GenerateID(item);
+	if (!allItems.ContainsKey(id))
+	{
+		// Add
+		allItems.Add(id, new Item(item));
+	}
+	// Count
+	allItems[id].Now += (double)item.Amount;
 }
 
 public class BlockInterface {
@@ -93,24 +125,168 @@ public class BlockInterface {
 	}
 }
 
-public class Quota {
-	private double now;
-	private double needed;
+public class Item {
+	private string type, sub;
+	private double now, req;
+	private MyDefinitionId blueprint;
 	
-	public Quota(double req) {
+	public Item(IMyInventoryItem item) {
+		string tmpcontent = item.Content.ToString();
+		type = tmpcontent.Substring(tmpcontent.IndexOf("_") + 1);
+		sub = item.Content.SubtypeName;
 		now = 0;
-		needed = req;
+		
+		if (type == "Component" || type == "Ingot")
+		{
+			switch (sub)
+			{
+				// Default values
+				case "Stone":
+					req = 370000;
+					break;
+				case "Iron":
+					req = 260000;
+					break;
+				case "Silicon":
+					req = 22000;
+					break;
+				case "Nickel":
+					req = 4000;
+					break;
+				case "Cobalt":
+					req = 1500;
+					break;
+				case "Silver":
+					req = 2000;
+					break;
+				case "Gold":
+					req = 500;
+					break;
+				case "Magnesium":
+					req = 130;
+					break;
+				case "Uranium":
+					req = 40;
+					break;
+				case "Platinum":
+					req = 30;
+					break;
+				case "BulletproofGlass":
+					req = 100;
+					break;
+				case "Computer":
+					req = 500;
+					break;
+				case "Construction":
+					req = 1000;
+					break;
+				case "Detector":
+					req = 10;
+					break;
+				case "Display":
+					req = 50;
+					break;
+				case "Explosives":
+					req = 10;
+					break;
+				case "Girder":
+					req = 100;
+					break;
+				case "GravityGenerator":
+					req = 10;
+					break;
+				case "InteriorPlate":
+					req = 500;
+					break;
+				case "LargeTube":
+					req = 200;
+					break;
+				case "Medical":
+					req = 10;
+					break;
+				case "MetalGrid":
+					req = 200;
+					break;
+				case "Motor":
+					req = 200;
+					break;
+				case "PowerCell":
+					req = 10;
+					break;
+				case "RadioCommunication":
+					req = 10;
+					break;
+				case "Reactor":
+					req = 10;
+					break;
+				case "SmallTube":
+					req = 200;
+					break;
+				case "SolarCell":
+					req = 10;
+					break;
+				case "SteelPlate":
+					req = 1000;
+					break;
+				case "Superconductor":
+					req = 10;
+					break;
+				case "Thrust":
+					req = 10;
+					break;
+				default:
+					req = 0;
+					break;
+			}
+		}
+		else {
+			req = 0;
+		}
+		
+		string bpstr = "MyObjectBuilder_BlueprintDefinition/";
+		switch (sub)
+		{
+			case "Computer":
+			case "Construction":
+			case "Detector":
+			case "Explosives":
+			case "Girder":
+			case "GravityGenerator":
+			case "Medical":
+			case "Motor":
+			case "RadioCommunication":
+			case "Reactor":
+			case "Thrust":
+				bpstr += sub + "Component";
+				break;
+			default:
+				bpstr += sub;
+				break;
+		}
+		blueprint = MyDefinitionId.Parse(bpstr);
 	}
 	
+	
+	public string Type {
+		get { return type; }
+	}
+	public string Sub {
+		get { return sub; }
+	}
 	public double Now {
 		get { return now; }
 		set { now = value; }
 	}
 	public double Req {
-		get { return needed; }
+		get { return req; }
+		set { req = value; }
 	}
-	public bool Enough() {
-		return now >= needed;
+	public bool HaveEnough() {
+		return now >= req;
+	}
+	public MyDefinitionId Blueprint {
+		get { return blueprint; }
+		set { blueprint = value; }
 	}
 }
 
@@ -136,62 +312,22 @@ public enum MaterialType {
 }
 
 static int num;
-static IMyTextPanel debugScreen;
-static IMyTextPanel oreScreen;
-static IMyTextPanel ingotScreen;
-static IMyTextPanel compScreen;
-static Dictionary<string, MyDefinitionId> compItems = new Dictionary<string, MyDefinitionId>();
+static Dictionary<string, IMyTextPanel> screens = new Dictionary<string, IMyTextPanel>();
+static List<BlockInterface> blkInts = new List<BlockInterface>();
+static int barSize = 15;
+static string ambMainLabel = "!main";
+static Dictionary<string, int> refrates = new Dictionary<string, int>();
+static Dictionary<string, Item> allItems = new Dictionary<string, Item>();
+
 
 public Program() {
-	debugScreen = GridTerminalSystem.GetBlockWithName("LCD Debug") as IMyTextPanel;
-	oreScreen = GridTerminalSystem.GetBlockWithName("LCD Ores") as IMyTextPanel;
-	ingotScreen = GridTerminalSystem.GetBlockWithName("LCD Ingots") as IMyTextPanel;
-	compScreen = GridTerminalSystem.GetBlockWithName("LCD Components") as IMyTextPanel;
-	WriteLine(debugScreen, "---------- Ptrsn's Inventory Manager v0.0001 ----------");
-	compItems.Add("Computer", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "ComputerComponent"));
-	compItems.Add("Construction", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "ConstructionComponent"));
-	compItems.Add("Detector", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "DetectorComponent"));
-	compItems.Add("Explosives", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "ExplosivesComponent"));
-	compItems.Add("Girder", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "GirderComponent"));
-	compItems.Add("GravityGenerator", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "GravityGeneratorComponent"));
-	compItems.Add("Medical", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "MedicalComponent"));
-	compItems.Add("Motor", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "MotorComponent"));
-	compItems.Add("RadioCommunication", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "RadioCommunicationComponent"));
-	compItems.Add("Reactor", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "ReactorComponent"));
-	compItems.Add("Thrust", MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + "ThrustComponent"));
-}
-
-public void Save() {
-}
-
-public void Main() {
-	// TODO List:
-	// Scrap
-	// Relative change
-	// Critical ingot amount -> Try refine that
-	// Auto-assemble check for ingots
-	
-	DateTime startTime = DateTime.Now;
-	// Init
-	// Get all blocks with inventories
-	var blocks = new List<IMyTerminalBlock>();
-	GridTerminalSystem.GetBlocks(blocks);
-	// TODO: Make this global
-	var blkInts = new List<BlockInterface>();
-	foreach (var block in blocks)
-	{
-		if (block.HasInventory)
-		{
-			blkInts.Add(new BlockInterface(block));
-		}
-	}
-	
-	// Consts
-	int barSize = 15;
-	string ambMainLabel = "!main";
-	
-	var refrates = new Dictionary<string, int>();
-	// Per hour
+	screens.Add("Debug", GridTerminalSystem.GetBlockWithName("LCD Debug") as IMyTextPanel);
+	screens.Add("Ore", GridTerminalSystem.GetBlockWithName("LCD Ores") as IMyTextPanel);
+	screens.Add("Ingot", GridTerminalSystem.GetBlockWithName("LCD Ingots") as IMyTextPanel);
+	screens.Add("Component", GridTerminalSystem.GetBlockWithName("LCD Components") as IMyTextPanel);
+	WriteLine(screens["Debug"], "---------- IMyManager v0.1 ----------");
+	GetInventories();
+	// Refinery rates per hour
 	refrates.Add("Stone", 46800);
 	refrates.Add("Iron", 93600);
 	refrates.Add("Silicon", 7800);
@@ -203,114 +339,78 @@ public void Main() {
 	refrates.Add("Uranium", 1170);
 	refrates.Add("Platinum", 1170);
 	refrates.Add("Scrap", 117000);
+}
+
+public void Save() {
+}
+
+public void Main() {
+	// TODO List:
+	// Scrap
+	// Relative change
+	// Critical ingot amount -> Try refine that
+	// Auto-assemble check for ingots
+	// Change requirements
+	// GUI?
+	// Priority
+	// Handle scrap, ice
+	// Different LCD sizes
 	
-	var components = new Dictionary<string, Quota>();
-	components.Add("Computer", new Quota(1000));
-	components.Add("Construction", new Quota(1000));
-	components.Add("Detector", new Quota(10));
-	components.Add("Display", new Quota(200));
-	components.Add("Explosives", new Quota(10));
-	components.Add("Girder", new Quota(100));
-	components.Add("GravityGenerator", new Quota(10));
-	components.Add("InteriorPlate", new Quota(1000));
-	components.Add("LargeTube", new Quota(200));
-	components.Add("Medical", new Quota(10));
-	components.Add("MetalGrid", new Quota(200));
-	components.Add("Motor", new Quota(500));
-	components.Add("PowerCell", new Quota(10));
-	components.Add("RadioCommunication", new Quota(10));
-	components.Add("Reactor", new Quota(10));
-	components.Add("SmallTube", new Quota(200));
-	components.Add("SolarCell", new Quota(10));
-	components.Add("SteelPlate", new Quota(1000));
-	components.Add("Superconductor", new Quota(10));
-	components.Add("Thrust", new Quota(10));
-	
+	// Init	
+	DateTime startTime = DateTime.Now;
 	// Variables
-	double[,] counters = new double[2, (int)MaterialType.NumOfMaterialType];
 	IMyInventory[] containers = new IMyInventory[(int)Labeling.NumOfLabels];
 	
-	// Refresh screens
-	Clear(debugScreen);
-	Clear(oreScreen);
-	Clear(ingotScreen);
-	Clear(compScreen);
-	
-	// Reset counter
-	foreach (var comp in components)
+	// Reset
+	foreach (var screen in screens)
 	{
-		comp.Value.Now = 0;
+		Clear(screen.Value);
 	}
 	
-	// Look for labels (!)
+	foreach (var item in allItems)
+	{
+		item.Value.Now = 0;
+	}
+	
+	// Look for labels (!) and add / count items
 	for (int i = 0; i < blkInts.Count; i++)
 	{	
-		if (blkInts[i].Type.Contains("Cargo") && blkInts[i].Name.Contains('!'))
+		if (blkInts[i].Type.Contains("Cargo") && blkInts[i].Name.Contains('!') && !blkInts[i].Input.IsFull)
 		{
 			for (var label = Labeling.Ore; label < Labeling.NumOfLabels; label++)
 			{
 				if (CheckForLabel(blkInts[i].Name, label.ToString()))
 				{
+					// Priority!
 					blkInts[i].labels[(int)label] = true;
+					containers[(int)label] = blkInts[i].Input;
 				}
 			}
 		}
-	}
-	//WriteLine(debugScreen, "Labels done");
-	
-	// Count
-	for (int i = 0; i < blkInts.Count; i++)
-	{
+		
 		// FIX: Input only
 		var items = blkInts[i].Input.GetItems();
 		for (int j = 0; j < items.Count; j++)
 		{
-			//WriteLine(debugScreen, ".Content: " + items[j].Content.ToString().Substring(27) + " .Sub: " + items[j].Content.SubtypeName);
-			for (var label = Labeling.Ore; label < Labeling.NumOfLabels; label++)
-			{
-				if (items[j].Content.ToString().Contains(label.ToString()) && items[j].Content.SubtypeName != "Ice")
-				{
-					if (label == Labeling.Component)
-					{
-						components[items[j].Content.SubtypeName].Now += (double)items[j].Amount;
-					}
-					else
-					{
-						MaterialType t = (MaterialType) Enum.Parse(typeof(MaterialType), items[j].Content.SubtypeName.ToString());
-						counters[(int)label, (int)t] += (double)items[j].Amount;
-					}
-					
-				}
-			}
+			//WriteLine(screens["Debug"], ".Content: " + items[j].Content.ToString().Substring(27) + " .Sub: " + items[j].Content.SubtypeName);
+			addItem(items[j]);
 		}
-	}
-	//WriteLine(debugScreen, "Count done");
-	
-	// Search for containers
-	// TODO: Priority
-	for (int i = 0; i < blkInts.Count; i++)
-	{
-		if (blkInts[i].Type.Contains("Cargo Container"))
+		if (blkInts[i].HasOutput)
 		{
-			for (var label = Labeling.Ore; label < Labeling.NumOfLabels; label++)
+			// Has output
+			var outp = blkInts[i].Output;
+			for (int j = 0; j < items.Count; j++)
 			{
-				if (blkInts[i].labels[(int)label] && !blkInts[i].Input.IsFull)
-				{
-					if (containers[(int)label] == null)
-					{
-						containers[(int)label] = blkInts[i].Input;
-					}
-				}
+				addItem(items[j]);
 			}
 		}
 	}
-	//WriteLine(debugScreen, "Search done");
 	
 	// Basic sorting transfer
 	for (int i = 0; i < blkInts.Count; i++)
 	{
 		var type = blkInts[i].Type;
-		//WriteLine(debugScreen, "@ " + type);
+		//WriteLine(screens["Debug"], "@ " + type);
 		
 		if (type == "Refinery")
 		{
@@ -333,9 +433,9 @@ public void Main() {
 				for (var label = Labeling.Ore; label < Labeling.NumOfLabels; label++)
 				{
 					// If item is in the wrong place and is not ice
-					if (!blkInts[i].labels[(int)label] && items[j].Content.ToString().Contains(label.ToString()) && items[j].Content.SubtypeName != "Ice")
+					if (!blkInts[i].labels[(int)label] && items[j].Content.ToString().Contains(label.ToString()))
 					{
-						WriteLine(debugScreen, "Move");
+						//WriteLine(screens["Debug"], "Move");
 						input.TransferItemTo(containers[(int)label], j);
 					}
 				}
@@ -405,7 +505,7 @@ public void Main() {
 		
 		
 	}
-	//WriteLine(debugScreen, "Transfer done");
+	//WriteLine(screens["Debug"], "Transfer done");
 	
 	// Auto-refining
 	// Search for available refs
@@ -421,45 +521,54 @@ public void Main() {
 	// Refine
 	if (refinery != null)
 	{
-		WriteLine(debugScreen, "There is a free refinery, looking for ores to refine");
+		WriteLine(screens["Debug"], "There is a free refinery, looking for ores to refine");
 		
 		// Check ingots
-		for (var type = MaterialType.Stone; type < MaterialType.NumOfMaterialType; type++)
+		foreach (var item in allItems.Values)
 		{
-			bool refStarted = false;
-			if (counters[(int)Labeling.Ingot, (int)type] < refrates[type.ToString()] / 20 && counters[(int)Labeling.Ore, (int)type] > 0)
+			if (item.Type == "Ingot" && !item.HaveEnough())
 			{
-				// Search for ore and transfer it
-				var ores = containers[(int)Labeling.Ore].GetItems();
-				for (int j = 0; j < ores.Count; j++)
+				WriteLine(screens["Debug"], "Need " + item.Sub);
+				// Try refine this type of ore :S expensive task
+				bool haveOre = false;
+				bool refStarted = false;
+				foreach (var subItem in allItems.Values)
 				{
-					if (ores[j].Content.SubtypeName == type.ToString())
+					if (subItem.Type == "Ore" && subItem.Sub == item.Sub && subItem.Now > 0)
 					{
-						// Start refining for 5 minutes at most
-						containers[(int)Labeling.Ore].TransferItemTo(refinery.Input, j, 0, true, 
-							refrates[type.ToString()] / 12
-							);
-						refStarted = true;
+						haveOre = true;
 						break;
 					}
 				}
+				if (haveOre)
+				{
+					for (int j = 0; j < blkInts.Count; j++)
+					{
+						if (blkInts[j].labels[(int)Labeling.Ore])
+						{
+							var ores = blkInts[j].Input.GetItems();
+							for (int k = 0; k < ores.Count; k++)
+							{
+								if (ores[k].Content.SubtypeName == item.Sub)
+								{
+									// Start refining for 5 minutes at most
+									blkInts[j].Input.TransferItemTo(refinery.Input, k, 0, true, refrates[item.Sub] / 12);
+									refStarted = true;
+									break;
+								}
+							}
+						}
+						if (refStarted)
+						{
+							break;
+						}
+					}
+				}
+				if (refStarted)
+				{
+					break;
+				}
 			}
-			if (refStarted)
-			{
-				break;
-			}
-		}
-	}
-	
-	// Look for new comps
-	var comps = containers[(int)Labeling.Component].GetItems();
-	for (int i = 0; i < comps.Count; i++)
-	{
-		string name = comps[i].Content.SubtypeName;
-		if (!compItems.ContainsKey(name))
-		{
-			WriteLine(debugScreen, name + " is new! Added!");
-			compItems.Add(name, MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/" + name));
 		}
 	}
 	
@@ -477,74 +586,54 @@ public void Main() {
 	
 	if (mainAssembler == null)
 	{
-		WriteLine(debugScreen, "Error: Can't auto-assemble, there is no main assembler available!");
+		WriteLine(screens["Debug"], "Error: Can't auto-assemble, there is no main assembler available!");
 	}
 	else if (mainAssembler.IsQueueEmpty)
 	{
 		// Assemble
-		WriteLine(debugScreen, "Looking for missing components");
+		WriteLine(screens["Debug"], "Looking for missing components");
 		
 		// Check components
-		foreach (var comp in components)
+		foreach (var item in allItems.Values)
 		{
-			if (!comp.Value.Enough() && compItems.ContainsKey(comp.Key))
+			if (item.Type == "Component" && !item.HaveEnough())
 			{
-				mainAssembler.AddQueueItem(compItems[comp.Key], (double)10);
+				mainAssembler.AddQueueItem(item.Blueprint, (double)10);
 				break;
 			}
 		}
 	}
 	
-	// Ore Screen
-	WriteLine(oreScreen, "--------- ORES ---------");
-	for (MaterialType type = MaterialType.Stone; type < MaterialType.NumOfMaterialType; type++)
+	// Screens
+	WriteLine(screens["Ore"], "--------- ORES ---------");
+	WriteLine(screens["Ingot"], "--------- INGOTS ---------");
+	WriteLine(screens["Component"], "--------- COMPONENTS ---------");
+	foreach (var item in allItems.Values)
 	{
-		double amount = Math.Round(counters[(int)Labeling.Ore, (int)type]);
-		WriteLine(oreScreen, type.ToString().PadRight(10) + amount.ToString().PadLeft(10) + " kg");
-	}
-	
-	// Ingot Screen
-	WriteLine(ingotScreen, "--------- INGOTS ---------");
-	for (MaterialType type = MaterialType.Stone; type < MaterialType.NumOfMaterialType; type++)
-	{
-		double amount = Math.Round(counters[(int)Labeling.Ingot, (int)type]);
-		Write(ingotScreen, type.ToString().PadRight(12));
-		for (int i = 0; i < barSize; i++)
+		if (item.Type == "Ore")
 		{
-			if ((double)i / barSize < amount / refrates[type.ToString()])
-			{
-				Write(ingotScreen, "|");
-			}
-			else
-			{
-				Write(ingotScreen, " ");
-			}
+			WriteLine(screens[item.Type], item.Sub.ToString().PadRight(10) + Math.Round(item.Now).ToString().PadLeft(10) + " kg");
 		}
-		Write(ingotScreen, amount.ToString().PadLeft(10) + " / " + refrates[type.ToString()] + " kg");
-		WriteLine(ingotScreen, "");
-	}
-	
-	WriteLine(compScreen, "--------- COMPONENTS ---------");
-	foreach (var comp in components)
-	{
-		double amount = Math.Round(comp.Value.Now);
-		Write(compScreen, comp.Key.PadRight(25));
-		for (int i = 0; i < barSize; i++)
+		else if (item.Type == "Ingot" || item.Type == "Component")
 		{
-			if ((double)i / barSize < amount / comp.Value.Req)
+			Write(screens[item.Type], item.Sub.ToString().PadRight(20));
+			for (int i = 0; i < barSize; i++)
 			{
-				Write(compScreen, "|");
+				if ((double)i / barSize < item.Now / item.Req)
+				{
+					Write(screens[item.Type], "|");
+				}
+				else
+				{
+					Write(screens[item.Type], " ");
+				}
 			}
-			else
-			{
-				Write(compScreen, " ");
-			}
+			Write(screens[item.Type], Math.Round(item.Now).ToString().PadLeft(10) + " / " + item.Req);
+			WriteLine(screens[item.Type], "");
 		}
-		Write(compScreen, amount.ToString().PadLeft(8) + " / " + comp.Value.Req);
-		WriteLine(compScreen, "");
 	}
 	
 	DateTime endTime = DateTime.Now;
 	TimeSpan elapsedTime = (TimeSpan)(endTime - startTime);
-	WriteLine(debugScreen, "Run #" + num++ + " Time: " + Math.Round(elapsedTime.TotalMilliseconds).ToString() + "ms");
+	WriteLine(screens["Debug"], "Run #" + num++ + " Time: " + Math.Round(elapsedTime.TotalMilliseconds).ToString() + "ms");
 }
